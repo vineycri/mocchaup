@@ -3,12 +3,24 @@
 Aplicación de escritorio (Python + Tkinter + Pillow) que automatiza la
 creación de mockups de pósters para un proyecto de e-commerce.
 
-Toma una fotografía de un entorno (una **pared con un marco vacío**), le
-superpone el **diseño de un póster**, recorta el resultado a **1:1
-(cuadrado)** y lo exporta en **.webp** con buena compresión.
+Toma **varias** fotografías de entornos (paredes con **marcos vacíos**), les
+superpone el **diseño de un póster**, recorta cada resultado a **1:1
+(cuadrado)** y los exporta **todos a la vez** en **.webp** con el prefijo
+**`PROD_`**. Soporta marcos rectos y **en ángulo (perspectiva)**, y acepta
+**AVIF** (además de JPG/PNG/WEBP/BMP/TIFF) como imágenes de entrada.
 
 Proyecto pensado como **ejercicio académico**: el código está muy comentado
 y estructurado paso a paso.
+
+## ✨ Novedades
+
+- **Carga múltiple de mockups** y **exportación por lotes** (un `PROD_*.webp`
+  por cada mockup, todos con un clic).
+- **Modo perspectiva (ángulo):** define el marco con **4 esquinas** para
+  marcos inclinados. Se implementa con Pillow (`Image.PERSPECTIVE`) y un
+  solver propio, **sin depender de OpenCV ni numpy**.
+- **Entrada AVIF** (y JPG/PNG/WEBP/BMP/TIFF).
+- **Salida con prefijo `PROD_`** (p.ej. `sala.jpg` → `PROD_sala.webp`).
 
 ---
 
@@ -47,19 +59,24 @@ y estructurado paso a paso.
 
 ## 🖱️ Cómo usar la app
 
-1. **Cargar imagen base (fondo):** se carga automáticamente si existe
-   `imagen.jpg`; si no, úsala con el botón.
-2. **Cargar diseño del póster:** elige la imagen del póster.
-3. **Definir el marco** (dos formas):
-   - Escribe **X, Y, Ancho, Alto** en los campos, **o**
-   - **Dibuja el rectángulo arrastrando el ratón** sobre la vista previa
-     (los campos se rellenan solos).
+1. **Añadir mockups:** botón *"Añadir mockups (varios)…"* — puedes seleccionar
+   **varias imágenes** a la vez. Aparecen en la lista (si existe `imagen.jpg`
+   se añade sola al abrir). Selecciona uno para editar su marco.
+2. **Cargar diseño del póster:** elige la imagen del póster (común a todos).
+3. **Definir el marco del mockup seleccionado**, eligiendo el tipo:
+   - **Rectángulo:** escribe **X, Y, Ancho, Alto** o **arrastra el ratón**
+     sobre la vista previa para dibujarlo.
+   - **Perspectiva (ángulo):** haz **clic en las 4 esquinas** del marco en
+     este orden → **sup-izq, sup-der, inf-der, inf-izq**.
+
+   Cada mockup guarda su propio marco de forma independiente.
 4. **Encaje del póster:**
    - `fill` → rellena el marco y recorta lo que sobra (recomendado).
    - `fit` → mete el póster entero (puede dejar bordes).
    - `stretch` → deforma el póster para llenar exactamente el marco.
-5. **Generar vista previa** para ver el resultado ya cuadrado (1:1).
-6. **Exportar a .webp** y elige dónde guardarlo.
+5. **Vista previa del seleccionado** para ver el resultado ya cuadrado (1:1).
+6. **Exportar TODOS** → elige una carpeta y se genera un `PROD_*.webp` por
+   cada mockup de la lista.
 
 ---
 
@@ -87,8 +104,9 @@ Estos valores son los que la app usa **por defecto** al abrirse.
 usando las coordenadas definidas en sus variables globales:
 
 ```bash
-python mockup_core.py diseno_del_poster.png            # -> mockup_final.webp
-python mockup_core.py diseno_del_poster.png salida.webp
+python mockup_core.py poster.png                       # usa imagen.jpg -> PROD_imagen.webp
+python mockup_core.py poster.png sala.jpg salon.png cocina.avif
+# genera PROD_sala.webp, PROD_salon.webp, PROD_cocina.webp
 ```
 
 ---

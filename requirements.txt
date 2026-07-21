@@ -2,3 +2,8 @@
 # Tkinter NO se lista aquí: viene incluido con Python en Windows y macOS.
 # (En Linux, si falta, instala el paquete del sistema: sudo apt install python3-tk)
 Pillow>=10.0.0
+
+# Soporte AVIF de ENTRADA:
+#  - Pillow reciente (>=11.3) ya trae AVIF de forma nativa: no hace falta nada.
+#  - Si tu Pillow es antiguo y no abre .avif, descomenta la línea siguiente:
+# pillow-avif-plugin>=1.4.0

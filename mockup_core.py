@@ -5,21 +5,33 @@
 ============================================================================
 
 Este módulo contiene TODA la lógica de imagen del generador de mockups:
-encajar el póster, superponerlo sobre la base, recortar a 1:1 y exportar.
+encajar el póster, superponerlo sobre la base (en RECTÁNGULO o con
+PERSPECTIVA/ángulo), recortar a 1:1 y exportar a .webp.
 
 Se mantiene separado de la interfaz (mockup_app.py) para que:
   - Sea fácil de leer y explicar paso a paso (ejercicio académico).
-  - Se pueda usar también como script de línea de comandos.
+  - Se pueda usar también como script de línea de comandos por lotes.
   - Se pueda probar de forma automática sin abrir una ventana.
 
 Uso como script (sin ventana):
-    python mockup_core.py diseno.png            -> genera 'mockup_final.webp'
-    python mockup_core.py diseno.png salida.webp
+    python mockup_core.py diseno.png                       (usa IMAGEN_BASE)
+    python mockup_core.py diseno.png mockup1.jpg mockup2.jpg ...
+    -> genera un archivo "PROD_<nombre>.webp" por cada mockup.
 ============================================================================
 """
 
+import os
 import sys
 from PIL import Image
+
+# --- Soporte de AVIF de ENTRADA --------------------------------------------
+# Pillow reciente trae AVIF nativo; en versiones anteriores hace falta el
+# plugin 'pillow-avif-plugin'. Lo importamos de forma opcional: si está
+# instalado, registra el lector de AVIF; si no, seguimos sin fallar.
+try:
+    import pillow_avif  # noqa: F401  (registra el soporte AVIF al importarse)
+except ImportError:
+    pass
 
 
 # ===========================================================================
@@ -28,11 +40,11 @@ from PIL import Image
 # La interfaz gráfica también permite cambiar estos valores en vivo, pero
 # aquí quedan como valores por defecto claros y comentados.
 
-# --- Imagen base (el entorno / la pared con el marco vacío) -----------------
-IMAGEN_BASE = "imagen.jpg"     # Nombre EXACTO del archivo de fondo.
+# --- Imagen base por defecto (el entorno / la pared con el marco vacío) ----
+IMAGEN_BASE = "imagen.jpg"     # Nombre EXACTO del archivo de fondo por defecto.
 
 # --- Coordenadas de la ESQUINA SUPERIOR IZQUIERDA del marco vacío ----------
-# Se miden en píxeles desde la esquina superior izquierda de "imagen.jpg".
+# Se miden en píxeles desde la esquina superior izquierda de la imagen base.
 POS_X = 300                    # Posición horizontal (X) donde empieza el marco.
 POS_Y = 200                    # Posición vertical   (Y) donde empieza el marco.
 
@@ -43,15 +55,23 @@ ALTO_MARCO = 700              # Alto  (en px) del hueco donde entra el póster.
 # --- Parámetros de EXPORTACIÓN ---------------------------------------------
 FORMATO_SALIDA = "webp"        # Formato de salida solicitado.
 CALIDAD_WEBP = 85            # Calidad 0-100. 80-90 = buena compresión/calidad.
-NOMBRE_SALIDA = "mockup_final.webp"   # Nombre del archivo exportado.
+PREFIJO_SALIDA = "PROD_"       # Prefijo de los archivos exportados (PROD_...).
 
 # --- Modo de encaje del póster dentro del marco ----------------------------
 # "stretch" = deforma el póster para llenar exactamente el marco.
 # "fit"     = mantiene la proporción del póster (puede dejar bordes).
 # "fill"    = mantiene proporción y RELLENA el marco recortando lo que sobra.
 MODO_ENCAJE = "fill"
+
+# Extensiones de imagen aceptadas COMO ENTRADA (incluye AVIF).
+EXTENSIONES_ENTRADA = ("*.jpg", "*.jpeg", "*.png", "*.webp",
+                       "*.bmp", "*.avif", "*.tif", "*.tiff")
 # ===========================================================================
 
+
+# ---------------------------------------------------------------------------
+#  UTILIDADES DE ENCAJE (redimensionar el póster al hueco)
+# ---------------------------------------------------------------------------
 
 def encajar_poster(poster, ancho_destino, alto_destino, modo="fill"):
     """
@@ -105,6 +125,107 @@ def encajar_poster(poster, ancho_destino, alto_destino, modo="fill"):
     )
 
 
+# ---------------------------------------------------------------------------
+#  PERSPECTIVA (ángulo): superponer el póster sobre un marco inclinado
+# ---------------------------------------------------------------------------
+
+def _resolver_sistema(A, b):
+    """
+    Resuelve el sistema lineal A·x = b por eliminación de Gauss.
+    'A' es una lista de filas (listas) y 'b' una lista. Devuelve x.
+    Se usa para calcular los 8 coeficientes de la transformación de
+    perspectiva SIN depender de numpy ni de OpenCV.
+    """
+    n = len(A)
+    # Matriz aumentada [A | b].
+    M = [list(A[i]) + [b[i]] for i in range(n)]
+    for col in range(n):
+        # Pivoteo parcial: colocamos la fila con mayor valor absoluto arriba.
+        pivote = max(range(col, n), key=lambda r: abs(M[r][col]))
+        M[col], M[pivote] = M[pivote], M[col]
+        valor = M[col][col]
+        # Normalizamos la fila del pivote.
+        for j in range(col, n + 1):
+            M[col][j] /= valor
+        # Eliminamos la columna en el resto de filas.
+        for r in range(n):
+            if r != col and M[r][col] != 0.0:
+                factor = M[r][col]
+                for j in range(col, n + 1):
+                    M[r][j] -= factor * M[col][j]
+    return [M[i][n] for i in range(n)]
+
+
+def _coeficientes_perspectiva(destino, origen):
+    """
+    Calcula los 8 coeficientes que Pillow necesita en Image.transform(...,
+    Image.PERSPECTIVE, ...). 'destino' son las 4 esquinas en la imagen de
+    SALIDA y 'origen' las 4 esquinas correspondientes en la de ENTRADA.
+    (Ambas en el mismo orden: sup-izq, sup-der, inf-der, inf-izq.)
+    """
+    A, b = [], []
+    for (dx, dy), (sx, sy) in zip(destino, origen):
+        A.append([dx, dy, 1, 0, 0, 0, -sx * dx, -sx * dy]); b.append(sx)
+        A.append([0, 0, 0, dx, dy, 1, -sy * dx, -sy * dy]); b.append(sy)
+    return _resolver_sistema(A, b)
+
+
+def _dimension_media_del_marco(esquinas):
+    """Estima ancho y alto 'medios' del cuadrilátero para pre-encajar el póster."""
+    (x0, y0), (x1, y1), (x2, y2), (x3, y3) = esquinas
+    def dist(a, b):
+        return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+    ancho = (dist((x0, y0), (x1, y1)) + dist((x3, y3), (x2, y2))) / 2  # sup + inf
+    alto = (dist((x0, y0), (x3, y3)) + dist((x1, y1), (x2, y2))) / 2  # izq + der
+    return max(1, round(ancho)), max(1, round(alto))
+
+
+def componer_perspectiva(base, poster, esquinas, modo="fill"):
+    """
+    Pega el 'poster' sobre 'base' deformándolo para encajar en el
+    cuadrilátero definido por 'esquinas' (4 puntos: sup-izq, sup-der,
+    inf-der, inf-izq). Devuelve la base compuesta (RGBA), SIN recortar.
+    """
+    base = base.convert("RGBA").copy()
+    W, H = base.size
+
+    # 1) Pre-encajamos el póster a la proporción media del marco (respeta el
+    #    modo fill/fit/stretch antes de deformar por perspectiva).
+    ancho_m, alto_m = _dimension_media_del_marco(esquinas)
+    poster_encajado = encajar_poster(poster, ancho_m, alto_m, modo)
+    w, h = poster_encajado.size
+
+    # 2) Esquinas de ORIGEN (el póster) en el orden sup-izq, sup-der, inf-der,
+    #    inf-izq, para que coincidan con el orden de 'esquinas' (destino).
+    origen = [(0, 0), (w, 0), (w, h), (0, h)]
+    coeffs = _coeficientes_perspectiva(esquinas, origen)
+
+    # 3) Deformamos el póster a un lienzo del tamaño de la base.
+    deformado = poster_encajado.transform(
+        (W, H), Image.PERSPECTIVE, coeffs, resample=Image.BICUBIC)
+
+    # 4) Lo pegamos respetando su transparencia (fuera del marco es 0).
+    base.paste(deformado, (0, 0), deformado)
+    return base
+
+
+def componer_rectangulo(base, poster, pos_x, pos_y, ancho, alto, modo="fill"):
+    """
+    Pega el 'poster' sobre 'base' en un rectángulo recto de tamaño
+    (ancho x alto) con la esquina superior izquierda en (pos_x, pos_y).
+    Devuelve la base compuesta (RGBA), SIN recortar.
+    """
+    base = base.convert("RGBA").copy()
+    poster_encajado = encajar_poster(poster, ancho, alto, modo)
+    # El tercer argumento (máscara) respeta la transparencia del póster.
+    base.paste(poster_encajado, (pos_x, pos_y), poster_encajado)
+    return base
+
+
+# ---------------------------------------------------------------------------
+#  RECORTE 1:1 Y ORQUESTACIÓN
+# ---------------------------------------------------------------------------
+
 def recortar_cuadrado_centrado(imagen):
     """
     Recorta la imagen desde el CENTRO para obtener una relación de
@@ -118,37 +239,39 @@ def recortar_cuadrado_centrado(imagen):
     return imagen.crop((izquierda, arriba, izquierda + lado, arriba + lado))
 
 
-def generar_mockup(imagen_base, imagen_poster,
-                   pos_x, pos_y, ancho_marco, alto_marco,
-                   modo=MODO_ENCAJE):
+def generar_mockup(imagen_base, imagen_poster, region, modo=MODO_ENCAJE):
     """
-    Orquesta todo el flujo gráfico y devuelve la imagen final (cuadrada, RGB):
+    Orquesta todo el flujo y devuelve la imagen final (cuadrada 1:1, RGB).
 
-        1) Encaja el póster en el tamaño del marco.
-        2) Lo pega sobre la imagen base en (pos_x, pos_y).
-        3) Recorta el resultado a 1:1 desde el centro.
+    'region' es un diccionario que describe DÓNDE va el póster:
+      - Rectángulo:  {"tipo": "rect", "x":.., "y":.., "w":.., "h":..}
+      - Perspectiva: {"tipo": "persp", "esquinas": [(x,y) x4]}
+        (esquinas en orden: sup-izq, sup-der, inf-der, inf-izq)
 
-    Ambos parámetros de imagen pueden ser una ruta (str) o un objeto Image.
+    'imagen_base' e 'imagen_poster' pueden ser una ruta (str) o un Image.
     """
-    # Permitimos pasar rutas o imágenes ya abiertas (útil para la GUI).
     base = Image.open(imagen_base) if isinstance(imagen_base, str) else imagen_base
     poster = Image.open(imagen_poster) if isinstance(imagen_poster, str) else imagen_poster
 
-    # PASO 1 — La base la llevamos a RGBA para poder pegar con transparencia.
-    base = base.convert("RGBA").copy()
+    if region.get("tipo") == "persp":
+        compuesta = componer_perspectiva(base, poster, region["esquinas"], modo)
+    else:
+        compuesta = componer_rectangulo(
+            base, poster, region["x"], region["y"],
+            region["w"], region["h"], modo)
 
-    # PASO 2 — Redimensionamos/encajamos el póster al hueco del marco.
-    poster_encajado = encajar_poster(poster, ancho_marco, alto_marco, modo)
+    # Recorte cuadrado 1:1 centrado y vuelta a RGB (WEBP no necesita alfa).
+    return recortar_cuadrado_centrado(compuesta).convert("RGB")
 
-    # PASO 3 — Superponemos el póster sobre la base en las coordenadas dadas.
-    #          El tercer argumento (máscara) respeta la transparencia.
-    base.paste(poster_encajado, (pos_x, pos_y), poster_encajado)
 
-    # PASO 4 — Recorte cuadrado 1:1 centrado.
-    cuadrado = recortar_cuadrado_centrado(base)
-
-    # PASO 5 — Volvemos a RGB porque WEBP para e-commerce no necesita alfa.
-    return cuadrado.convert("RGB")
+def nombre_de_salida(ruta_o_nombre_base, prefijo=PREFIJO_SALIDA):
+    """
+    Construye el nombre de salida a partir del nombre de la imagen base:
+    p.ej. 'sala.jpg' -> 'PROD_sala.webp'.
+    """
+    base = os.path.basename(str(ruta_o_nombre_base))
+    stem, _ext = os.path.splitext(base)
+    return f"{prefijo}{stem}.{FORMATO_SALIDA}"
 
 
 def exportar_webp(imagen, ruta_salida, calidad=CALIDAD_WEBP):
@@ -159,24 +282,30 @@ def exportar_webp(imagen, ruta_salida, calidad=CALIDAD_WEBP):
 
 
 # ===========================================================================
-#  MODO SCRIPT (sin ventana): útil para automatizar por lotes.
+#  MODO SCRIPT (sin ventana): exporta en LOTE con las coordenadas globales.
 # ===========================================================================
 if __name__ == "__main__":
-    # Uso: python mockup_core.py <diseno_poster> [salida.webp]
+    # Uso: python mockup_core.py <poster> [base1 base2 ...]
     if len(sys.argv) < 2:
-        print("Uso: python mockup_core.py <diseno_poster> [salida.webp]")
+        print("Uso: python mockup_core.py <poster> [mockup1 mockup2 ...]")
+        print("Si no indicas mockups, se usa IMAGEN_BASE =", IMAGEN_BASE)
         sys.exit(1)
 
     ruta_poster = sys.argv[1]
-    ruta_salida = sys.argv[2] if len(sys.argv) > 2 else NOMBRE_SALIDA
+    bases = sys.argv[2:] if len(sys.argv) > 2 else [IMAGEN_BASE]
 
-    print(f"Base:   {IMAGEN_BASE}")
+    # Región rectangular por defecto (definida en las variables globales).
+    region_defecto = {"tipo": "rect", "x": POS_X, "y": POS_Y,
+                      "w": ANCHO_MARCO, "h": ALTO_MARCO}
+
     print(f"Póster: {ruta_poster}")
-    print(f"Marco:  X={POS_X}, Y={POS_Y}, {ANCHO_MARCO}x{ALTO_MARCO}px "
-          f"(modo={MODO_ENCAJE})")
+    print(f"Marco por defecto: X={POS_X}, Y={POS_Y}, "
+          f"{ANCHO_MARCO}x{ALTO_MARCO}px (modo={MODO_ENCAJE})")
 
-    resultado = generar_mockup(IMAGEN_BASE, ruta_poster,
-                               POS_X, POS_Y, ANCHO_MARCO, ALTO_MARCO,
-                               modo=MODO_ENCAJE)
-    exportar_webp(resultado, ruta_salida, CALIDAD_WEBP)
-    print(f"✅ Mockup guardado en: {ruta_salida}  (cuadrado 1:1, .webp)")
+    for base in bases:
+        resultado = generar_mockup(base, ruta_poster, region_defecto, MODO_ENCAJE)
+        salida = nombre_de_salida(base)
+        exportar_webp(resultado, salida, CALIDAD_WEBP)
+        print(f"  ✅ {base}  ->  {salida}  ({resultado.size[0]}x{resultado.size[1]}, 1:1)")
+
+    print("Listo.")
