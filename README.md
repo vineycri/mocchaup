@@ -80,8 +80,12 @@ y estructurado paso a paso.
 5. **Tamaño de salida:** por defecto cada archivo conserva el **mismo tamaño
    que su mockup**. Marca *"Recortar a 1:1 (cuadrado)"* si quieres salida
    cuadrada.
-6. **Vista previa del seleccionado** para ver cómo queda.
-7. **Exportar TODOS** → elige una carpeta y se genera un `PROD_*.webp` por
+6. **Nombre de los archivos:** escribe un nombre base en el campo de la
+   sección *"Nombre de los archivos"*. Se guardará como `PROD_<nombre>.webp`;
+   si hay varios mockups se numera (`PROD_<nombre>_01.webp`, `_02`, …). Si lo
+   dejas vacío, se usa el nombre de cada mockup (`PROD_<mockup>.webp`).
+7. **Vista previa del seleccionado** para ver cómo queda.
+8. **Exportar TODOS** → elige una carpeta y se genera un `PROD_*.webp` por
    cada mockup de la lista.
 
 ---

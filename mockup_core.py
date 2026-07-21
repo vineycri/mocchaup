@@ -21,6 +21,7 @@ Uso como script (sin ventana):
 """
 
 import os
+import re
 import sys
 from PIL import Image
 
@@ -286,6 +287,34 @@ def nombre_de_salida(ruta_o_nombre_base, prefijo=PREFIJO_SALIDA):
     base = os.path.basename(str(ruta_o_nombre_base))
     stem, _ext = os.path.splitext(base)
     return f"{prefijo}{stem}.{FORMATO_SALIDA}"
+
+
+def limpiar_nombre(nombre):
+    """
+    Deja un nombre de archivo seguro: quita rutas y caracteres problemáticos
+    y sustituye los espacios por guiones bajos.
+    """
+    nombre = os.path.basename(str(nombre).strip())
+    # Solo permitimos letras/números (incl. acentos), guion, punto y espacio.
+    nombre = re.sub(r"[^\w\-. ]", "_", nombre, flags=re.UNICODE)
+    return nombre.strip().replace(" ", "_")
+
+
+def nombre_lote(nombre_base, indice, total, prefijo=PREFIJO_SALIDA):
+    """
+    Construye el nombre de salida a partir de un NOMBRE que elige el usuario.
+    - Si solo hay 1 mockup:  'PROD_<nombre>.webp'
+    - Si hay varios:         'PROD_<nombre>_01.webp', '..._02.webp', ...
+      (el número se rellena con ceros según la cantidad total).
+    'indice' es 1-based.
+    """
+    base = limpiar_nombre(nombre_base) or "mockup"
+    if total > 1:
+        ancho = len(str(total))               # p.ej. 2 dígitos si hay 10-99.
+        sufijo = f"_{str(indice).zfill(ancho)}"
+    else:
+        sufijo = ""
+    return f"{prefijo}{base}{sufijo}.{FORMATO_SALIDA}"
 
 
 def exportar_webp(imagen, ruta_salida, calidad=CALIDAD_WEBP):

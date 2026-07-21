@@ -41,7 +41,7 @@ from PIL import Image, ImageTk              # Pillow: procesamiento de imágenes
 from mockup_core import (
     IMAGEN_BASE, POS_X, POS_Y, ANCHO_MARCO, ALTO_MARCO,
     CALIDAD_WEBP, MODO_ENCAJE, EXTENSIONES_ENTRADA, PREFIJO_SALIDA,
-    RECORTAR_1A1, generar_mockup, exportar_webp, nombre_de_salida,
+    RECORTAR_1A1, generar_mockup, exportar_webp, nombre_de_salida, nombre_lote,
 )
 
 
@@ -85,6 +85,8 @@ class AppMockup(tk.Tk):
         self.var_calidad = tk.IntVar(value=CALIDAD_WEBP)
         # Tamaño de salida: por defecto NO recorta -> mantiene el del mockup.
         self.var_cuadrado = tk.BooleanVar(value=RECORTAR_1A1)
+        # Nombre base que el usuario pone antes de exportar el lote (opcional).
+        self.var_nombre = tk.StringVar(value="")
 
         self._construir_interfaz()
         self._cargar_base_por_defecto()
@@ -186,7 +188,18 @@ class AppMockup(tk.Tk):
                  font=("Helvetica", 8)).pack(anchor="w")
 
         # ---- 5) Acciones --------------------------------------------------
-        titulo("5) Acciones")
+        titulo("5) Nombre de los archivos")
+        tk.Entry(panel, textvariable=self.var_nombre, width=32, bg="#313244",
+                 fg="white", insertbackground="white", relief="flat").pack(
+            anchor="w", pady=(0, 1), ipady=3)
+        tk.Label(panel,
+                 text=f"Se guardará como {PREFIJO_SALIDA}<nombre>.webp\n"
+                      "(con varios mockups se numera: _01, _02, …).\n"
+                      "Vacío = usa el nombre de cada mockup.",
+                 bg="#1e1e2e", fg="#a6adc8", font=("Helvetica", 8),
+                 justify="left").pack(anchor="w")
+
+        titulo("6) Acciones")
         boton("🔄  Vista previa del seleccionado", self.actualizar_preview,
               color="#89b4fa").pack(pady=3)
         boton(f"💾  Exportar TODOS ({PREFIJO_SALIDA}*.webp)", self.exportar_todos,
@@ -422,18 +435,28 @@ class AppMockup(tk.Tk):
             title="Carpeta donde guardar los PROD_*.webp")
         if not carpeta:
             return
+        # Nombre base que ha escrito el usuario (opcional).
+        nombre_base = self.var_nombre.get().strip()
+        total = len(self.mockups)
         exportados, errores = [], []
-        for mk in self.mockups:
+        for indice, mk in enumerate(self.mockups, start=1):
             try:
                 resultado = generar_mockup(mk["imagen"], self.img_poster,
                                            self._region_de(mk), mk["modo"],
                                            self.var_cuadrado.get())
-                salida = os.path.join(carpeta, nombre_de_salida(mk["ruta"]))
+                # Si hay nombre, lo usamos (numerado); si no, el del mockup.
+                if nombre_base:
+                    archivo = nombre_lote(nombre_base, indice, total)
+                else:
+                    archivo = nombre_de_salida(mk["ruta"])
+                salida = os.path.join(carpeta, archivo)
                 exportar_webp(resultado, salida, self.var_calidad.get())
                 exportados.append(os.path.basename(salida))
             except Exception as err:  # noqa: BLE001
                 errores.append(f"{mk['nombre']}: {err}")
-        resumen = f"✅ {len(exportados)} archivo(s) exportado(s) a:\n{carpeta}"
+        resumen = f"✅ {len(exportados)} archivo(s) exportado(s) a:\n{carpeta}\n"
+        if exportados:
+            resumen += "\n" + "\n".join(f"  • {n}" for n in exportados)
         if errores:
             resumen += "\n\n⚠️ Errores:\n" + "\n".join(errores)
         self._estado(f"Exportados {len(exportados)} en {carpeta}")
