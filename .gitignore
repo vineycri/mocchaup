@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+mockup_final.webp
+*.webp
+!ejemplo_*.webp

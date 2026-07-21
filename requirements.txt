@@ -1,0 +1,4 @@
+# Dependencias del Generador de Mockups de Pósters.
+# Tkinter NO se lista aquí: viene incluido con Python en Windows y macOS.
+# (En Linux, si falta, instala el paquete del sistema: sudo apt install python3-tk)
+Pillow>=10.0.0
