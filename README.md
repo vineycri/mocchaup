@@ -4,9 +4,10 @@ Aplicación de escritorio (Python + Tkinter + Pillow) que automatiza la
 creación de mockups de pósters para un proyecto de e-commerce.
 
 Toma **varias** fotografías de entornos (paredes con **marcos vacíos**), les
-superpone el **diseño de un póster**, recorta cada resultado a **1:1
-(cuadrado)** y los exporta **todos a la vez** en **.webp** con el prefijo
-**`PROD_`**. Soporta marcos rectos y **en ángulo (perspectiva)**, y acepta
+superpone el **diseño de un póster** y los exporta **todos a la vez** en
+**.webp** con el prefijo **`PROD_`**. Por defecto cada resultado conserva el
+**mismo tamaño que su imagen de mockup** (opcionalmente se puede recortar a
+**1:1**). Soporta marcos rectos y **en ángulo (perspectiva)**, y acepta
 **AVIF** (además de JPG/PNG/WEBP/BMP/TIFF) como imágenes de entrada.
 
 Proyecto pensado como **ejercicio académico**: el código está muy comentado
@@ -21,6 +22,8 @@ y estructurado paso a paso.
   solver propio, **sin depender de OpenCV ni numpy**.
 - **Entrada AVIF** (y JPG/PNG/WEBP/BMP/TIFF).
 - **Salida con prefijo `PROD_`** (p.ej. `sala.jpg` → `PROD_sala.webp`).
+- **Salida al mismo tamaño que el mockup** por defecto (con casilla opcional
+  para recortar a 1:1).
 
 ---
 
@@ -74,8 +77,11 @@ y estructurado paso a paso.
    - `fill` → rellena el marco y recorta lo que sobra (recomendado).
    - `fit` → mete el póster entero (puede dejar bordes).
    - `stretch` → deforma el póster para llenar exactamente el marco.
-5. **Vista previa del seleccionado** para ver el resultado ya cuadrado (1:1).
-6. **Exportar TODOS** → elige una carpeta y se genera un `PROD_*.webp` por
+5. **Tamaño de salida:** por defecto cada archivo conserva el **mismo tamaño
+   que su mockup**. Marca *"Recortar a 1:1 (cuadrado)"* si quieres salida
+   cuadrada.
+6. **Vista previa del seleccionado** para ver cómo queda.
+7. **Exportar TODOS** → elige una carpeta y se genera un `PROD_*.webp` por
    cada mockup de la lista.
 
 ---
@@ -116,10 +122,10 @@ python mockup_core.py poster.png sala.jpg salon.png cocina.avif
 1. **Encaje:** el póster se redimensiona al tamaño del marco (`encajar_poster`).
 2. **Superposición:** se pega sobre la base en `(POS_X, POS_Y)`, respetando
    transparencias (`generar_mockup`).
-3. **Recorte 1:1:** el resultado se recorta al cuadrado desde el centro
+3. **Tamaño de salida:** por defecto se conserva el del mockup; si activas
+   `RECORTAR_1A1`, se recorta al cuadrado desde el centro
    (`recortar_cuadrado_centrado`).
 4. **Exportación:** se guarda como `.webp` con compresión (`exportar_webp`).
 
-> El código usa **Pillow (PIL)**. Para el encaje simple del póster no hace
-> falta corrección de perspectiva; si tu marco estuviera en ángulo, se podría
-> ampliar con OpenCV y una transformación de perspectiva.
+> El código usa **Pillow (PIL)**. El modo perspectiva se resuelve con
+> `Image.PERSPECTIVE` y un solver de sistemas propio, sin numpy ni OpenCV.

@@ -57,6 +57,11 @@ FORMATO_SALIDA = "webp"        # Formato de salida solicitado.
 CALIDAD_WEBP = 85            # Calidad 0-100. 80-90 = buena compresión/calidad.
 PREFIJO_SALIDA = "PROD_"       # Prefijo de los archivos exportados (PROD_...).
 
+# --- Tamaño de SALIDA ------------------------------------------------------
+# False = la imagen final conserva el MISMO TAMAÑO que la imagen de mockup.
+# True  = la imagen final se recorta a 1:1 (cuadrado) desde el centro.
+RECORTAR_1A1 = False
+
 # --- Modo de encaje del póster dentro del marco ----------------------------
 # "stretch" = deforma el póster para llenar exactamente el marco.
 # "fit"     = mantiene la proporción del póster (puede dejar bordes).
@@ -239,14 +244,19 @@ def recortar_cuadrado_centrado(imagen):
     return imagen.crop((izquierda, arriba, izquierda + lado, arriba + lado))
 
 
-def generar_mockup(imagen_base, imagen_poster, region, modo=MODO_ENCAJE):
+def generar_mockup(imagen_base, imagen_poster, region, modo=MODO_ENCAJE,
+                   recortar_1a1=RECORTAR_1A1):
     """
-    Orquesta todo el flujo y devuelve la imagen final (cuadrada 1:1, RGB).
+    Orquesta todo el flujo y devuelve la imagen final (RGB).
 
     'region' es un diccionario que describe DÓNDE va el póster:
       - Rectángulo:  {"tipo": "rect", "x":.., "y":.., "w":.., "h":..}
       - Perspectiva: {"tipo": "persp", "esquinas": [(x,y) x4]}
         (esquinas en orden: sup-izq, sup-der, inf-der, inf-izq)
+
+    'recortar_1a1':
+      - False (por defecto): la salida conserva el MISMO TAMAÑO que el mockup.
+      - True: la salida se recorta a 1:1 (cuadrado) desde el centro.
 
     'imagen_base' e 'imagen_poster' pueden ser una ruta (str) o un Image.
     """
@@ -260,8 +270,12 @@ def generar_mockup(imagen_base, imagen_poster, region, modo=MODO_ENCAJE):
             base, poster, region["x"], region["y"],
             region["w"], region["h"], modo)
 
-    # Recorte cuadrado 1:1 centrado y vuelta a RGB (WEBP no necesita alfa).
-    return recortar_cuadrado_centrado(compuesta).convert("RGB")
+    # Opcionalmente recortamos a 1:1; si no, mantenemos el tamaño del mockup.
+    if recortar_1a1:
+        compuesta = recortar_cuadrado_centrado(compuesta)
+
+    # Vuelta a RGB (WEBP para e-commerce no necesita canal alfa).
+    return compuesta.convert("RGB")
 
 
 def nombre_de_salida(ruta_o_nombre_base, prefijo=PREFIJO_SALIDA):
@@ -302,10 +316,13 @@ if __name__ == "__main__":
     print(f"Marco por defecto: X={POS_X}, Y={POS_Y}, "
           f"{ANCHO_MARCO}x{ALTO_MARCO}px (modo={MODO_ENCAJE})")
 
+    tam = "1:1" if RECORTAR_1A1 else "tamaño del mockup"
     for base in bases:
-        resultado = generar_mockup(base, ruta_poster, region_defecto, MODO_ENCAJE)
+        resultado = generar_mockup(base, ruta_poster, region_defecto,
+                                   MODO_ENCAJE, RECORTAR_1A1)
         salida = nombre_de_salida(base)
         exportar_webp(resultado, salida, CALIDAD_WEBP)
-        print(f"  ✅ {base}  ->  {salida}  ({resultado.size[0]}x{resultado.size[1]}, 1:1)")
+        print(f"  ✅ {base}  ->  {salida}  "
+              f"({resultado.size[0]}x{resultado.size[1]}, {tam})")
 
     print("Listo.")

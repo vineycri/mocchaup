@@ -41,7 +41,7 @@ from PIL import Image, ImageTk              # Pillow: procesamiento de imágenes
 from mockup_core import (
     IMAGEN_BASE, POS_X, POS_Y, ANCHO_MARCO, ALTO_MARCO,
     CALIDAD_WEBP, MODO_ENCAJE, EXTENSIONES_ENTRADA, PREFIJO_SALIDA,
-    generar_mockup, exportar_webp, nombre_de_salida,
+    RECORTAR_1A1, generar_mockup, exportar_webp, nombre_de_salida,
 )
 
 
@@ -83,6 +83,8 @@ class AppMockup(tk.Tk):
         self.var_h = tk.IntVar(value=ALTO_MARCO)
         self.var_modo = tk.StringVar(value=MODO_ENCAJE)
         self.var_calidad = tk.IntVar(value=CALIDAD_WEBP)
+        # Tamaño de salida: por defecto NO recorta -> mantiene el del mockup.
+        self.var_cuadrado = tk.BooleanVar(value=RECORTAR_1A1)
 
         self._construir_interfaz()
         self._cargar_base_por_defecto()
@@ -170,6 +172,18 @@ class AppMockup(tk.Tk):
                  variable=self.var_calidad, bg="#1e1e2e", fg="white",
                  highlightthickness=0, troughcolor="#585b70",
                  length=240).pack(anchor="w")
+
+        # Tamaño de salida. Desmarcado => misma dimensión que el mockup.
+        tk.Checkbutton(
+            panel, text="Recortar a 1:1 (cuadrado)",
+            variable=self.var_cuadrado, command=self.actualizar_preview,
+            bg="#1e1e2e", fg="white", selectcolor="#313244",
+            activebackground="#1e1e2e", activeforeground="white",
+            font=("Helvetica", 9)).pack(anchor="w", pady=(4, 0))
+        tk.Label(panel,
+                 text="Desmarcado: exporta al mismo tamaño de cada mockup.",
+                 bg="#1e1e2e", fg="#a6adc8",
+                 font=("Helvetica", 8)).pack(anchor="w")
 
         # ---- 5) Acciones --------------------------------------------------
         titulo("5) Acciones")
@@ -384,10 +398,12 @@ class AppMockup(tk.Tk):
         self._guardar_region_actual()
         try:
             resultado = generar_mockup(mk["imagen"], self.img_poster,
-                                       self._region_de(mk), mk["modo"])
+                                       self._region_de(mk), mk["modo"],
+                                       self.var_cuadrado.get())
             self._mostrar_en_canvas(resultado)
             self._mostrando_resultado = True
-            self._estado("Vista previa 1:1 generada. Ajusta si hace falta.")
+            tam = "1:1" if self.var_cuadrado.get() else f"{resultado.size[0]}x{resultado.size[1]}"
+            self._estado(f"Vista previa generada ({tam}). Ajusta si hace falta.")
         except Exception as err:  # noqa: BLE001
             messagebox.showerror("Error al generar", str(err))
             self._estado(f"Error: {err}")
@@ -410,7 +426,8 @@ class AppMockup(tk.Tk):
         for mk in self.mockups:
             try:
                 resultado = generar_mockup(mk["imagen"], self.img_poster,
-                                           self._region_de(mk), mk["modo"])
+                                           self._region_de(mk), mk["modo"],
+                                           self.var_cuadrado.get())
                 salida = os.path.join(carpeta, nombre_de_salida(mk["ruta"]))
                 exportar_webp(resultado, salida, self.var_calidad.get())
                 exportados.append(os.path.basename(salida))
